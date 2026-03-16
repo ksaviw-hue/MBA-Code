@@ -1151,8 +1151,8 @@ public class BasketballLobby
         int[] slots1v1 = {0, 1, 2, 9, 10, 11, 18, 19, 20};
         for (int slot : slots1v1) {
             buttons[slot] = new ItemButton(slot, mode1v1, p -> {
-                p.sendMessage("§c§l» §cHead to the 1v1 court and stand on a queue spot!");
-                p.sendMessage("§7The court is marked with particle effects.");
+                p.teleport(new Location(p.getWorld(), 8.5, -59, 238.5, p.getLocation().getYaw(), p.getLocation().getPitch()));
+                p.sendMessage("§c§l» §cTeleporting to Ranked 1v1s!");
                 p.closeInventory();
             });
         }
@@ -1171,8 +1171,8 @@ public class BasketballLobby
         int[] slots2v2 = {3, 4, 5, 12, 13, 14, 21, 22, 23};
         for (int slot : slots2v2) {
             buttons[slot] = new ItemButton(slot, mode2v2, p -> {
-                p.sendMessage("§a§l» §aHead to the 2v2 courts and stand on a spot!");
-                p.sendMessage("§7Courts are marked with particle effects.");
+                p.teleport(new Location(p.getWorld(), 8.5, -59, 196, p.getLocation().getYaw(), p.getLocation().getPitch()));
+                p.sendMessage("§a§l» §aTeleporting to Ranked 2v2s!");
                 p.closeInventory();
             });
         }
@@ -1191,8 +1191,8 @@ public class BasketballLobby
         int[] slots3v3 = {6, 7, 8, 15, 16, 17, 24, 25, 26};
         for (int slot : slots3v3) {
             buttons[slot] = new ItemButton(slot, mode3v3, p -> {
-                p.sendMessage("§a§l» §aHead to the 3v3 courts and stand on a spot!");
-                p.sendMessage("§7Courts are marked with particle effects.");
+                p.teleport(new Location(p.getWorld(), 8.5, -59, 111, p.getLocation().getYaw(), p.getLocation().getPitch()));
+                p.sendMessage("§b§l» §bTeleporting to Ranked 3v3s!");
                 p.closeInventory();
             });
         }
@@ -1462,16 +1462,16 @@ public class BasketballLobby
     private void initializePhysicalQueueSpots() {
         // Initialize 1v1 courts with custom spot locations
         if (rankedHalfCourts.size() >= 2) {
-            // Court 1: 37.5, -61, 271
+            // Court 1: 37.5, -62, 271
             Location court1Loc = rankedHalfCourts.get(0);
-            Location court1Home = new Location(court1Loc.getWorld(), 42, -61, 247);
-            Location court1Away = new Location(court1Loc.getWorld(), 32, -61, 247);
+            Location court1Home = new Location(court1Loc.getWorld(), 42, -62, 247);
+            Location court1Away = new Location(court1Loc.getWorld(), 32, -62, 247);
             onesCourts.add(new CourtQueue(court1Loc, court1Home, court1Away));
             
-            // Court 2: -20.5, -61, 271
+            // Court 2: -20.5, -62, 271
             Location court2Loc = rankedHalfCourts.get(1);
-            Location court2Home = new Location(court2Loc.getWorld(), -15, -61, 247);
-            Location court2Away = new Location(court2Loc.getWorld(), -25, -61, 247);
+            Location court2Home = new Location(court2Loc.getWorld(), -15, -62, 247);
+            Location court2Away = new Location(court2Loc.getWorld(), -25, -62, 247);
             onesCourts.add(new CourtQueue(court2Loc, court2Home, court2Away));
             
             Bukkit.getLogger().info("[Park Queue] Initialized 2 courts for 1v1 with physical spots");

@@ -17,7 +17,6 @@ import me.x_tias.partix.server.Place;
 import me.x_tias.partix.util.Colour;
 import me.x_tias.partix.util.Position;
 import net.kyori.adventure.text.Component;
-import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
@@ -28,7 +27,7 @@ public class Puck
     int delay = 5;
 
     public Puck(Location location, Place place) {
-        super(location, place, BallType.PUCK, 0.4, 0.1, 0.05, 0.03, 0.19, 0.74, 0.05, 0.53, true, true, 1.5, Color.BLACK, Color.BLACK);
+        super(location, place, BallType.PUCK, 0.4, 0.1, 0.05, 0.03, 0.19, 0.74, 0.05, 0.53, true, true, 1.5, "partix:puck");
     }
 
     @Override

@@ -1166,9 +1166,11 @@ public abstract class GoalGame
                     if (this.canEditGame(p)) {
                         this.settings.reboundMachineEnabled = true;
 
-                        // Reset rebound machine stats when enabled
+                        // Reset rebound machine stats, spawn shooting machines, and start pregame task
                         if (this instanceof BasketballGame) {
                             ((BasketballGame) this).resetReboundMachineStats();
+                            ((BasketballGame) this).spawnShootingMachines();
+                            ((BasketballGame) this).startPregameTask();
                         }
 
                         this.sendMessage(Message.settingChange("Rebound Machine", "enabled"));
@@ -1185,6 +1187,10 @@ public abstract class GoalGame
                     }
                     if (this.canEditGame(p)) {
                         this.settings.reboundMachineEnabled = false;
+                        // Remove shooting machines when disabled
+                        if (this instanceof BasketballGame) {
+                            ((BasketballGame) this).removeShootingMachines();
+                        }
                         this.sendMessage(Message.settingChange("Rebound Machine", "disabled"));
                         p.sendMessage(Component.text("Rebound Machine disabled - normal gameplay.").color(Colour.deny()));
                     } else {

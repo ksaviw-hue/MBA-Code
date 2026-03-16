@@ -119,7 +119,7 @@ implements Listener {
                 new BukkitRunnable(){
 
                     public void run() {
-                        BallFactory.remove(fakeInboundBall);
+                        fakeInboundBall.remove();
                         game.callTimeout(theirTeam);
                     }
                 }.runTaskLater((Plugin)Partix.getInstance(), 1L);

@@ -54,7 +54,6 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import net.kyori.adventure.title.TitlePart;
 import org.bukkit.Bukkit;
-import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.Sound;
@@ -98,7 +97,7 @@ extends me.x_tias.partix.plugin.ball.Ball {
     private boolean layupShot = false;
 
     public Basketball(Location location, BasketballGame game) {
-        super(location, game, BallType.BASKETBALL, 0.4, 0.2, 0.2, 0.015, 0.025, 0.35, 0.01, 0.265, false, false, 2.0, Color.fromRGB((int)14970945), Color.BLACK);
+        super(location, game, BallType.BASKETBALL, 0.4, 0.2, 0.2, 0.015, 0.025, 0.35, 0.01, 0.265, false, false, 2.0, "partix:basketball");
         this.game = game;
         this.ownerTicks = 405;
     }
@@ -158,24 +157,23 @@ extends me.x_tias.partix.plugin.ball.Ball {
             yaw = acc <= 1 ? (yaw += (float)(new Random().nextBoolean() ? 1 : -1)) : (acc <= 2 ? (float)((double)yaw + (new Random().nextBoolean() ? 3.5 : -3.5)) : (acc <= 4 ? (yaw += (float)(new Random().nextBoolean() ? 6 : -6)) : (float)((double)yaw + (new Random().nextBoolean() ? 7.5 : -7.5))));
         }
         th.setYaw(yaw);
-        // Check if there's a solid block exactly 3 blocks below the player
+        // Check if there are 3 solid blocks below the player (when shooting, player is in the air)
+        Location checkLoc1 = player.getLocation().subtract(0.0, 1.0, 0.0);
+        Location checkLoc2 = player.getLocation().subtract(0.0, 2.0, 0.0);
         Location checkLoc3 = player.getLocation().subtract(0.0, 3.0, 0.0);
+        
+        Block block1 = checkLoc1.getBlock();
+        Block block2 = checkLoc2.getBlock();
         Block block3 = checkLoc3.getBlock();
+        
+        Material material1 = block1.getType();
+        Material material2 = block2.getType();
         Material material3 = block3.getType();
         
-        // Check if there's air between player and 3 blocks down
-        boolean hasAirBelow = false;
-        for (double y = 0.5; y < 3.0; y += 0.5) {
-            Location checkLoc = player.getLocation().subtract(0.0, y, 0.0);
-            Block block = checkLoc.getBlock();
-            if (block.getType().isAir()) {
-                hasAirBelow = true;
-                break;
-            }
-        }
-        
-        // Three point if solid block at 3 blocks down AND no air gaps before it
-        this.threeEligible = (material3.isSolid() && !material3.isAir() && !hasAirBelow);
+        // Three-pointer if all 3 blocks below are solid, otherwise two-pointer
+        this.threeEligible = (material1.isSolid() && !material1.isAir() && 
+                              material2.isSolid() && !material2.isAir() && 
+                              material3.isSolid() && !material3.isAir());
         
         // Visual feedback: find the block player is standing on
         Block standingBlockTemp = null;
@@ -590,9 +588,22 @@ extends me.x_tias.partix.plugin.ball.Ball {
             boolean travelerIsHome = this.game.getHomePlayers().contains(damager);
             GoalGame.Team inboundTeam = travelerIsHome ? GoalGame.Team.AWAY : GoalGame.Team.HOME;
             
-            // Remove the ball and trigger inbound for opposing team
+            // Check number of players on opposing team
+            List<Player> opposingTeam = travelerIsHome ? this.game.getAwayPlayers() : this.game.getHomePlayers();
+            
+            // Remove the ball first
             this.remove();
-            this.game.endTimeout(inboundTeam);
+            
+            // If opposing team has 1 or fewer players, teleport them to ball location
+            if (opposingTeam.size() <= 1) {
+                Location ballLoc = damager.getLocation();
+                for (Player opposingPlayer : opposingTeam) {
+                    opposingPlayer.teleport(ballLoc);
+                }
+            } else {
+                // Otherwise, trigger normal inbound for opposing team
+                this.game.endTimeout(inboundTeam);
+            }
         }
     }
 

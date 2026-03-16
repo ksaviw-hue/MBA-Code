@@ -30,7 +30,6 @@
  */
 package me.x_tias.partix.plugin.cosmetics;
 
-import ca.spottedleaf.concurrentutil.completable.Completable;
 import lombok.Getter;
 import me.x_tias.partix.Partix;
 import me.x_tias.partix.database.PlayerDb;

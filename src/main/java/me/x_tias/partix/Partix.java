@@ -137,6 +137,7 @@ public final class Partix extends JavaPlugin implements Listener {
         this.getServer().getPluginManager().registerEvents(this.locationMusicManager, this);
         this.getServer().getPluginManager().registerEvents(me.x_tias.partix.mini.factories.Hub.hub, this);
         this.getServer().getPluginManager().registerEvents(new me.x_tias.partix.mini.basketball.SuperJumpManager(), this);
+        this.getServer().getPluginManager().registerEvents(new me.x_tias.partix.mini.basketball.BallRack.InteractListener(), this);
         
         // Register ProtocolLib packet listener for key press detection
         PlayerInputTracker.register(this);

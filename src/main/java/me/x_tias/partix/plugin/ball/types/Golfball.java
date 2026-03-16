@@ -16,14 +16,13 @@ import me.x_tias.partix.plugin.ball.BallType;
 import me.x_tias.partix.server.Place;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextColor;
-import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
 public class Golfball
         extends Ball {
     public Golfball(Location location, Place place) {
-        super(location, place, BallType.GOLFBALL, 0.4, 0.01, 0.01, 0.035, 0.19, 0.94, 0.05, 0.66, true, true, 3.0, Color.WHITE, Color.WHITE);
+        super(location, place, BallType.GOLFBALL, 0.4, 0.01, 0.01, 0.035, 0.19, 0.94, 0.05, 0.66, true, true, 3.0, "partix:golfball");
     }
 
     @Override

@@ -142,7 +142,14 @@ extends GoalGame {
     private UUID assistEligiblePasser;
     private long assistTimerEndTime;
     private boolean assistTimerActive = false;
-    
+    private final List<BallRack> ballRacks = new ArrayList<>();
+    private final Map<UUID, Integer> reboundMachineShotsTaken = new HashMap<>();
+    private final Map<UUID, Integer> reboundMachineShotsMade = new HashMap<>();
+    private final Map<UUID, Integer> reboundMachineShotsMissed = new HashMap<>();
+    private BukkitTask pregameTask = null;
+    private ShootingMachine homeShootingMachine = null;
+    private ShootingMachine awayShootingMachine = null;
+
     public boolean isHalfCourt1v1 = false;
     public boolean isRecGame = false;
     public boolean isPhysicalQueueGame = false;
@@ -153,6 +160,7 @@ extends GoalGame {
         this.setup(settings.copy(), location, xDistance, yDistance, xLength, zWidth, yHeight);
         this.courtLength = xDistance;
         this.location = location.clone();
+        spawnBallRacks();
     }
 
     public Location getLocation() {
@@ -627,6 +635,11 @@ extends GoalGame {
         if (shooter == null) {
             return;
         }
+        // Track rebound machine shot attempts (pregame only)
+        if (this.settings.reboundMachineEnabled && this.getState().equals(GoalGame.State.PREGAME)) {
+            UUID shooterId = shooter.getUniqueId();
+            this.reboundMachineShotsTaken.put(shooterId, this.reboundMachineShotsTaken.getOrDefault(shooterId, 0) + 1);
+        }
         GoalGame.State st = this.getState();
         if (!st.equals((Object)GoalGame.State.REGULATION) && !st.equals((Object)GoalGame.State.OVERTIME)) {
             return;
@@ -802,12 +815,6 @@ extends GoalGame {
     @Override
     public void setPregame() {
         World world = this.getCenter().getWorld();
-        BallFactory.create(this.getHomeSpawn().clone().add(0.0, 0.0, -3.0), this.getBallType(), this);
-        BallFactory.create(this.getHomeSpawn().clone().add(0.0, 0.0, -1.5), this.getBallType(), this);
-        BallFactory.create(this.getHomeSpawn().clone().add(0.0, 0.0, 3.0), this.getBallType(), this);
-        BallFactory.create(this.getAwaySpawn().clone().add(0.0, 0.0, -3.0), this.getBallType(), this);
-        BallFactory.create(this.getAwaySpawn().clone().add(0.0, 0.0, -1.5), this.getBallType(), this);
-        BallFactory.create(this.getAwaySpawn().clone().add(0.0, 0.0, 3.0), this.getBallType(), this);
         Block h = this.getHomeNet().clone().getCenter().toLocation(world).getBlock();
         h.getLocation().clone().getBlock().setType(Material.AIR);
         h.getLocation().clone().subtract(0.0, 1.0, 0.0).getBlock().setType(Material.AIR);
@@ -815,12 +822,201 @@ extends GoalGame {
         a.getLocation().clone().getBlock().setType(Material.AIR);
         a.getLocation().clone().subtract(0.0, 1.0, 0.0).getBlock().setType(Material.AIR);
         this.resetShotClock();
+
+        // Spawn ball racks on the wings of the three-point arc at both ends
+        spawnBallRacks();
+        startPregameTask();
+    }
+
+    private void spawnBallRacks() {
+        removeBallRacks();
+
+        Location center = this.getCenter();
+        double wingX = 10.0;   // X offset for wing position (sideline direction)
+        double homeZ = this.getHomeNet().getCenterZ() - 8.0; // Z near home basket
+        double awayZ = this.getAwayNet().getCenterZ() + 8.0; // Z near away basket
+
+        // Home end - left wing rack (diagonal, facing court center)
+        ballRacks.add(new BallRack(
+                new Location(center.getWorld(), center.getX() - wingX, center.getY(), homeZ),
+                -45f, this
+        ));
+        // Home end - right wing rack
+        ballRacks.add(new BallRack(
+                new Location(center.getWorld(), center.getX() + wingX, center.getY(), homeZ),
+                45f, this
+        ));
+
+        // Away end - left wing rack
+        ballRacks.add(new BallRack(
+                new Location(center.getWorld(), center.getX() - wingX, center.getY(), awayZ),
+                -135f, this
+        ));
+        // Away end - right wing rack
+        ballRacks.add(new BallRack(
+                new Location(center.getWorld(), center.getX() + wingX, center.getY(), awayZ),
+                135f, this
+        ));
+    }
+
+    private void removeBallRacks() {
+        for (BallRack rack : ballRacks) {
+            rack.remove();
+        }
+        ballRacks.clear();
+    }
+
+    public void startPregameTask() {
+        if (pregameTask != null) {
+            pregameTask.cancel();
+        }
+        pregameTask = Bukkit.getScheduler().runTaskTimer(Partix.getInstance(), () -> {
+            if (getState().equals(GoalGame.State.PREGAME) && settings.reboundMachineEnabled) {
+                reboundDetection();
+                // Rotate shooting machines toward closest player
+                if (homeShootingMachine != null) {
+                    homeShootingMachine.rotateTowardClosest(this.getPlayers());
+                }
+                if (awayShootingMachine != null) {
+                    awayShootingMachine.rotateTowardClosest(this.getPlayers());
+                }
+            }
+        }, 0L, 1L);
+    }
+
+    private void reboundDetection() {
+        List<Ball> nearbyBalls = BallFactory.getNearby(this.getCenter(), 100.0);
+
+        for (Ball ball : nearbyBalls) {
+            if (!(ball instanceof Basketball basketball)) continue;
+
+            Location ballLoc = basketball.getLocation();
+            Vector ballVec = ballLoc.toVector();
+
+            boolean inHomeNet = this.getHomeNet().clone().expand(0.3).contains(ballVec);
+            boolean inAwayNet = this.getAwayNet().clone().expand(0.3).contains(ballVec);
+
+            // MADE SHOT
+            if ((inHomeNet || inAwayNet) && basketball.getVelocity().getY() < 0.15) {
+                Player shooter = basketball.getLastDamager();
+                if (shooter != null && shooter.isOnline()) {
+                    UUID shooterId = shooter.getUniqueId();
+                    int currentAttempts = reboundMachineShotsTaken.getOrDefault(shooterId, 0);
+                    int currentMakes = reboundMachineShotsMade.getOrDefault(shooterId, 0);
+                    int currentMisses = reboundMachineShotsMissed.getOrDefault(shooterId, 0);
+
+                    if (currentMakes + currentMisses < currentAttempts) {
+                        reboundMachineShotsMade.put(shooterId, currentMakes + 1);
+                        int shotsTaken = currentAttempts;
+                        int shotsMade = currentMakes + 1;
+                        int shotsMissed = currentMisses;
+                        double percentage = ((double) shotsMade / shotsTaken) * 100;
+                        shooter.sendMessage(Component.text("\u2713 MAKE | Shots: " + shotsTaken + " | Makes: " + shotsMade + " | Misses: " + shotsMissed + " | FG%: " + String.format("%.1f", percentage) + "%").color(Colour.allow()));
+
+                        Location hoopLocation = inHomeNet ? this.getHomeNet().getCenter().toLocation(ballLoc.getWorld()) : this.getAwayNet().getCenter().toLocation(ballLoc.getWorld());
+
+                        // Use shooting machine launcher position if available
+                        ShootingMachine machine = inHomeNet ? homeShootingMachine : awayShootingMachine;
+                        Location spawnLoc = (machine != null && machine.isAlive()) ? machine.getLauncherLocation() : hoopLocation.clone().subtract(0, 2.0, 0);
+
+                        basketball.remove();
+
+                        Bukkit.getScheduler().runTaskLater(Partix.getInstance(), () -> {
+                            if (shooter.isOnline()) {
+                                Ball newBall = BallFactory.create(spawnLoc, BallType.BASKETBALL, this);
+                                Location playerLoc = shooter.getLocation();
+                                Vector direction = playerLoc.toVector().subtract(spawnLoc.toVector()).normalize();
+                                newBall.setVelocity(direction.getX() * 0.45, 0.2, direction.getZ() * 0.45);
+                                shooter.playSound(shooter.getLocation(), Sound.ENTITY_ARROW_HIT_PLAYER, 0.5f, 1.2f);
+                            }
+                        }, 10L);
+                    }
+                }
+            }
+            // MISSED SHOT
+            else if (basketball.getVelocity().getY() < -0.3 && ballLoc.getY() < this.getCenter().getY() + 1.0) {
+                Player shooter = basketball.getLastDamager();
+                if (shooter != null && shooter.isOnline()) {
+                    UUID shooterId = shooter.getUniqueId();
+                    int currentAttempts = reboundMachineShotsTaken.getOrDefault(shooterId, 0);
+                    int currentMakes = reboundMachineShotsMade.getOrDefault(shooterId, 0);
+                    int currentMisses = reboundMachineShotsMissed.getOrDefault(shooterId, 0);
+
+                    if (currentMakes + currentMisses < currentAttempts) {
+                        reboundMachineShotsMissed.put(shooterId, currentMisses + 1);
+                        int shotsTaken = currentAttempts;
+                        int shotsMade = currentMakes;
+                        int shotsMissed = currentMisses + 1;
+                        double percentage = ((double) shotsMade / shotsTaken) * 100;
+                        shooter.sendMessage(Component.text("\u2717 MISS | Shots: " + shotsTaken + " | Makes: " + shotsMade + " | Misses: " + shotsMissed + " | FG%: " + String.format("%.1f", percentage) + "%").color(Colour.deny()));
+
+                        basketball.remove();
+
+                        // Pick closest hoop for return
+                        Location underRim;
+                        ShootingMachine machine;
+                        double homeDistSq = ballLoc.distanceSquared(this.getHomeNet().getCenter().toLocation(ballLoc.getWorld()));
+                        double awayDistSq = ballLoc.distanceSquared(this.getAwayNet().getCenter().toLocation(ballLoc.getWorld()));
+                        if (homeDistSq < awayDistSq) {
+                            machine = homeShootingMachine;
+                            underRim = this.getHomeNet().getCenter().toLocation(ballLoc.getWorld()).subtract(0, 2.0, 0);
+                        } else {
+                            machine = awayShootingMachine;
+                            underRim = this.getAwayNet().getCenter().toLocation(ballLoc.getWorld()).subtract(0, 2.0, 0);
+                        }
+                        Location spawnLoc = (machine != null && machine.isAlive()) ? machine.getLauncherLocation() : underRim;
+
+                        Bukkit.getScheduler().runTaskLater(Partix.getInstance(), () -> {
+                            if (shooter.isOnline()) {
+                                Ball newBall = BallFactory.create(spawnLoc, BallType.BASKETBALL, this);
+                                Location playerLoc = shooter.getLocation();
+                                Vector direction = playerLoc.toVector().subtract(spawnLoc.toVector()).normalize();
+                                newBall.setVelocity(direction.getX() * 0.45, 0.2, direction.getZ() * 0.45);
+                                shooter.playSound(shooter.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.3f, 0.8f);
+                            }
+                        }, 10L);
+                    }
+                }
+            }
+        }
+    }
+
+    public void spawnShootingMachines() {
+        removeShootingMachines();
+        World world = this.getCenter().getWorld();
+        double floorY = this.getCenter().getY();
+        double courtCenterX = this.getCenter().getX();
+        double courtCenterZ = this.getCenter().getZ();
+        Location homeHoopCenter = this.getHomeNet().getCenter().toLocation(world);
+        homeShootingMachine = new ShootingMachine(homeHoopCenter, floorY, courtCenterX, courtCenterZ);
+        if (!this.isSingleHoopMode) {
+            Location awayHoopCenter = this.getAwayNet().getCenter().toLocation(world);
+            awayShootingMachine = new ShootingMachine(awayHoopCenter, floorY, courtCenterX, courtCenterZ);
+        }
+    }
+
+    public void removeShootingMachines() {
+        if (homeShootingMachine != null) {
+            homeShootingMachine.remove();
+            homeShootingMachine = null;
+        }
+        if (awayShootingMachine != null) {
+            awayShootingMachine.remove();
+            awayShootingMachine = null;
+        }
     }
 
     @Override
     public void setFaceoff() {
         World world = this.getCenter().getWorld();
         this.removeBalls();
+        this.removeBallRacks();
+        this.removeShootingMachines();
+        // Cancel pregame task when leaving pregame
+        if (pregameTask != null) {
+            pregameTask.cancel();
+            pregameTask = null;
+        }
         Location h = this.getHomeNet().clone().getCenter().toLocation(world);
         h.getBlock().setType(Material.AIR);
         h.subtract(0.0, 1.0, 0.0).getBlock().setType(Material.BARRIER);
@@ -1531,6 +1727,10 @@ extends GoalGame {
     }
     
     public void resetReboundMachineStats() {
+        this.reboundMachineShotsTaken.clear();
+        this.reboundMachineShotsMade.clear();
+        this.reboundMachineShotsMissed.clear();
+        this.sendMessage(Component.text("Rebound Machine stats reset for all players.").color(Colour.partix()));
     }
     
     public boolean isCoach(UUID playerId) {

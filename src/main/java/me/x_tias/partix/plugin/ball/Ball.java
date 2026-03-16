@@ -1,7 +1,6 @@
 package me.x_tias.partix.plugin.ball;
 
-import com.comphenix.protocol.ProtocolLibrary;
-import com.comphenix.protocol.events.PacketContainer;
+import dev.lone.itemsadder.api.CustomStack;
 import lombok.Getter;
 import lombok.Setter;
 import me.x_tias.partix.Partix;
@@ -9,7 +8,6 @@ import me.x_tias.partix.mini.basketball.BasketballGame;
 import me.x_tias.partix.mini.game.GoalGame;
 import me.x_tias.partix.plugin.athlete.Athlete;
 import me.x_tias.partix.plugin.athlete.AthleteManager;
-import me.x_tias.partix.plugin.athlete.RenderType;
 import me.x_tias.partix.plugin.ball.event.BallHitBlockEvent;
 import me.x_tias.partix.plugin.ball.event.BallHitEntityEvent;
 import me.x_tias.partix.plugin.ball.event.BallRemoveDamagerEvent;
@@ -18,7 +16,6 @@ import me.x_tias.partix.plugin.ball.types.Basketball;
 import me.x_tias.partix.server.Place;
 import me.x_tias.partix.util.Colour;
 import me.x_tias.partix.util.Items;
-import me.x_tias.partix.util.Packeter;
 import me.x_tias.partix.util.UUIDDataType;
 import net.kyori.adventure.text.Component;
 import org.bukkit.*;
@@ -32,10 +29,10 @@ import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 import org.joml.AxisAngle4f;
+import org.joml.Vector3f;
 
 import java.util.Collection;
 import java.util.Objects;
-import java.util.Random;
 import java.util.UUID;
 
 public abstract class Ball {
@@ -60,11 +57,9 @@ public abstract class Ball {
     @Getter
     private final BallType ballType;
     private final Place place;
-    public int packetId;
+    private final String itemsAdderItemId;
     private ItemDisplay entity;
 
-    private Color primary;
-    private Color secondary;
     @Setter
     @Getter
     private Location location;
@@ -79,11 +74,11 @@ public abstract class Ball {
     private Player lastDamager;
     @Getter
     private Player currentDamager;
-    private double currentYaw = 180;
+    private double currentYaw = 0;
     @Setter
     private boolean locked;
 
-    public Ball(Location location, Place place, BallType ballType, double hitbox, double width, double height, double friction, double gravity, double repulsion, double balance, double weight, boolean maintainBounceY, boolean maintainBounceX, double stealBallDistance, Color primary, Color secondary) {
+    public Ball(Location location, Place place, BallType ballType, double hitbox, double width, double height, double friction, double gravity, double repulsion, double balance, double weight, boolean maintainBounceY, boolean maintainBounceX, double stealBallDistance, String itemsAdderItemId) {
         this.location = location;
         this.hitbox = hitbox;
         this.place = place;
@@ -93,11 +88,8 @@ public abstract class Ball {
         this.repulsion = repulsion;
         this.stealBallDistance = stealBallDistance;
         this.gravity = gravity;
-        this.primary = primary;
         this.uuid = UUID.randomUUID();
-        this.secondary = secondary;
         this.balance = balance;
-        this.packetId = -1;
         this.ballType = ballType;
         this.repulseDelay = 0;
         this.stealDelay = 5;
@@ -106,6 +98,7 @@ public abstract class Ball {
         this.lastDamager = null;
         this.currentDamager = null;
         this.dimensions = new Vector(width / 2, height, width / 2);
+        this.itemsAdderItemId = itemsAdderItemId;
 
         summonEntity();
     }
@@ -115,29 +108,29 @@ public abstract class Ball {
     }
 
     private void summonEntity() {
-        //entity = (Slime) world.spawnEntity(location, EntityType.SLIME);
         entity = (ItemDisplay) world.spawnEntity(location, EntityType.ITEM_DISPLAY);
         entity.setGravity(false);
         entity.setPersistent(false);
         entity.getPersistentDataContainer().set(Partix.getInstance().getBallKey(), UUIDDataType.TYPE, place.getUniqueId());
-        //entity.setAI(false);
-        //entity.setCollidable(false);
-        //entity.setSize(1);
         entity.setInvulnerable(true);
         entity.setSilent(true);
+        entity.setItemDisplayTransform(ItemDisplay.ItemDisplayTransform.FIXED);
 
-        //entity.playEffect(EntityEffect.HURT);
+        // Set the 3D model from ItemsAdder
+        CustomStack customStack = CustomStack.getInstance(itemsAdderItemId);
+        if (customStack != null) {
+            entity.setItemStack(customStack.getItemStack());
+        } else {
+            // Fallback if ItemsAdder item not found
+            System.out.println("[Partix] WARNING: ItemsAdder item '" + itemsAdderItemId + "' not found! Using fallback.");
+            entity.setItemStack(new ItemStack(Material.ORANGE_CONCRETE));
+        }
 
-        //entity.setVisible(false);
-        // Commented out ball model (tropical fish)
-        //ItemStack ball = new ItemStack(Material.TROPICAL_FISH);
-        //entity.setItemStack(ball);
+        // Scale the model to match ball dimensions
         Transformation transformation = entity.getTransformation();
-        // taken from previous config
-        //double[] ballOffset = {-0.55, -0.25, -0.55};
-        //transformation.getTranslation().set(new Vector3f((float) ballOffset[0], (float) ballOffset[1], (float) ballOffset[2]));
+        float scale = (float) (dimensions.getX() * 2 * 3.5); // scale relative to ball width
+        transformation.getScale().set(new Vector3f(scale, scale, scale));
         entity.setTransformation(transformation);
-        //transformationLeft(entity, new Vector(0, 1, 0), 0.785f);
     }
 
     public void transformationLeft(Display entity, Vector axis, float angle) {
@@ -155,11 +148,6 @@ public abstract class Ball {
             this.entity.remove();
             this.entity = null;
         }
-    }
-
-    public void changeColors(Color p, Color s) {
-        this.primary = p;
-        this.secondary = s;
     }
 
     public void setVelocity(double x, double y, double z) {
@@ -664,9 +652,8 @@ public abstract class Ball {
 
     private void spawn() {
         this.modify();
-        if (this.getCurrentDamager() != null) {
-            // existing code...
-        }
+
+        if (entity == null || entity.isDead()) return;
 
         Location newLocation = location.clone().add(0, 0.2, 0);
 
@@ -677,60 +664,25 @@ public abstract class Ball {
                         this.velocity.getZ() * this.velocity.getZ()
         );
 
-        // Scale rotation based on speed, with a minimum threshold
+        // Spin the ball model based on speed
         if (speed > 0.0075) {
-            // The faster the ball, the more it rotates
-            double rotationAmount = Math.min(speed * 20, 15); // Cap at 15 degrees per tick
+            double rotationAmount = Math.min(speed * 20, 15);
             currentYaw -= rotationAmount;
-
             if (currentYaw < 0f) {
                 currentYaw = 180f;
             }
         }
 
-        // Set the rotation
-        newLocation.setPitch((float) currentYaw - 90);
+        // Apply rotation via transformation (spins the 3D model)
+        entity.setInterpolationDuration(2);
+        entity.setInterpolationDelay(-1);
+        Transformation transformation = entity.getTransformation();
+        float angle = (float) Math.toRadians(currentYaw);
+        // Rotate around the X axis for a rolling/spinning effect
+        transformation.getLeftRotation().set(new AxisAngle4f(angle, 1f, 0f, 0f));
+        entity.setTransformation(transformation);
+
         entity.teleport(newLocation);
-
-        PacketContainer remove = null;
-
-        if (packetId > 0) {
-            remove = Packeter.removeEntity(packetId);
-        }
-
-        packetId = 100000 + new Random().nextInt(899999);
-        PacketContainer spawn = Packeter.spawnEntity(packetId, location, EntityType.SLIME);
-
-        for (Player player : location.getNearbyPlayers(100)) {
-            Athlete athlete = AthleteManager.get(player.getUniqueId());
-            float size = 0.4f;
-            if (athlete.getRenderType().equals(RenderType.SLIME)) {
-                if (remove != null) {
-                    sendPacket(player, remove);
-                }
-                sendPacket(player, spawn);
-                player.spawnParticle(Particle.DUST, location.getX(), location.getY() + (dimensions.getY() / 2), location.getZ(), 1 + (int) (1 + (((dimensions.getX() * 10) * (dimensions.getY() * 10)) * 20)) / 30, dimensions.getX(), dimensions.getY() / 2, dimensions.getZ(), 0, new Particle.DustTransition(primary, Color.GRAY, size));
-                player.spawnParticle(Particle.DUST, location.getX(), location.getY() + (dimensions.getY() / 2), location.getZ(), 1 + (int) (1 + (((dimensions.getX() * 10) * (dimensions.getY() * 10))) * 10) / 30, dimensions.getX(), dimensions.getY() / 2, dimensions.getZ(), 0, new Particle.DustTransition(secondary, Color.GRAY, size));
-                player.spawnParticle(Particle.DUST, location.getX(), location.getY() + (dimensions.getY() / 2), location.getZ(), 1 + (int) (1 + (((dimensions.getX() * 10) * (dimensions.getY() * 10))) * 20) / 30, dimensions.getX(), dimensions.getY() / 2, dimensions.getZ(), 0, new Particle.DustTransition(primary, Color.GRAY, size));
-            } else if (athlete.getRenderType().equals(RenderType.REMOVE_SLIME)) {
-                if (remove != null) {
-                    sendPacket(player, remove);
-                }
-                player.spawnParticle(Particle.DUST, location.getX(), location.getY() + (dimensions.getY() / 2), location.getZ(), 1 + (int) (1 + (((dimensions.getX() * 10) * (dimensions.getY() * 10)) * 20)) / 10, dimensions.getX(), dimensions.getY() / 2, dimensions.getZ(), 0, new Particle.DustTransition(primary, Color.GRAY, size));
-                player.spawnParticle(Particle.DUST, location.getX(), location.getY() + (dimensions.getY() / 2), location.getZ(), 1 + (int) (1 + (((dimensions.getX() * 10) * (dimensions.getY() * 10))) * 10) / 10, dimensions.getX(), dimensions.getY() / 2, dimensions.getZ(), 0, new Particle.DustTransition(secondary, Color.GRAY, size));
-                player.spawnParticle(Particle.DUST, location.getX(), location.getY() + (dimensions.getY() / 2), location.getZ(), 1 + (int) (1 + (((dimensions.getX() * 10) * (dimensions.getY() * 10))) * 20) / 10, dimensions.getX(), dimensions.getY() / 2, dimensions.getZ(), 0, new Particle.DustTransition(primary, Color.GRAY, size));
-            } else {
-                player.spawnParticle(Particle.DUST, location.getX(), location.getY() + (dimensions.getY() / 2), location.getZ(), (int) (1 + (((dimensions.getX() * 10) * (dimensions.getY() * 10)) * 20)), dimensions.getX(), dimensions.getY() / 2, dimensions.getZ(), 0, new Particle.DustTransition(primary, Color.GRAY, size));
-                player.spawnParticle(Particle.DUST, location.getX(), location.getY() + (dimensions.getY() / 2), location.getZ(), (int) (1 + (((dimensions.getX() * 10) * (dimensions.getY() * 10))) * 10), dimensions.getX(), dimensions.getY() / 2, dimensions.getZ(), 0, new Particle.DustTransition(secondary, Color.GRAY, size));
-                player.spawnParticle(Particle.DUST, location.getX(), location.getY() + (dimensions.getY() / 2), location.getZ(), (int) (1 + (((dimensions.getX() * 10) * (dimensions.getY() * 10))) * 20), dimensions.getX(), dimensions.getY() / 2, dimensions.getZ(), 0, new Particle.DustTransition(primary, Color.GRAY, size));
-            }
-        }
-
-    }
-
-
-    private void sendPacket(Player player, PacketContainer packet) {
-        ProtocolLibrary.getProtocolManager().sendServerPacket(player, packet);
     }
 
     public abstract void modify();
